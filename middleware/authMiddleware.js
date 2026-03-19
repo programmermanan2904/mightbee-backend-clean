@@ -32,31 +32,56 @@ export const protectProfile = async (req, res, next) => {
   try {
     let token;
 
-    // Profile token comes in as "Profile <token>" to distinguish from account token
-    if (req.headers.authorization?.startsWith("Profile "))
+    // ✅ Read profile token from header
+    if (req.headers["x-profile-token"]) {
+      token = req.headers["x-profile-token"];
+    } 
+    else if (req.headers.authorization?.startsWith("Profile ")) {
       token = req.headers.authorization.split(" ")[1];
+    }
 
-    if (!token)
-      return res.status(401).json({ success: false, message: "No profile token provided." });
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "No profile token provided.",
+      });
+    }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    if (decoded.type !== "profile")
-      return res.status(401).json({ success: false, message: "Invalid profile token." });
+    if (decoded.type !== "profile") {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid profile token.",
+      });
+    }
 
     const profile = await Profile.findById(decoded.profileId);
-    if (!profile)
-      return res.status(401).json({ success: false, message: "Profile no longer exists." });
+    if (!profile) {
+      return res.status(401).json({
+        success: false,
+        message: "Profile no longer exists.",
+      });
+    }
 
     const account = await User.findById(profile.account);
-    if (!account)
-      return res.status(401).json({ success: false, message: "Account no longer exists." });
+    if (!account) {
+      return res.status(401).json({
+        success: false,
+        message: "Account no longer exists.",
+      });
+    }
 
     req.profile = profile;
-    req.user    = account; // account is still accessible if needed
+    req.user = account;
+
     next();
   } catch (err) {
-    const msg = err.name === "TokenExpiredError" ? "Profile token expired." : "Invalid profile token.";
+    const msg =
+      err.name === "TokenExpiredError"
+        ? "Profile token expired."
+        : "Invalid profile token.";
+
     res.status(401).json({ success: false, message: msg });
   }
 };
