@@ -17,9 +17,20 @@ const signProfileToken = (profileId) =>
 export const getProfiles = async (req, res) => {
   try {
     const profiles = await Profile.find({ account: req.user._id })
-      .select("_id name avatar profession preferredTone createdAt")
-      .lean();
-    res.json({ success: true, profiles });
+  .select("_id name avatar profession preferredTone createdAt")
+  .lean();
+
+const cleanProfiles = profiles
+  .filter(p => p && p._id)
+  .map(p => ({
+    _id: p._id,
+    name: p.name || "Unnamed",
+    avatar: p.avatar || "🐝",
+    profession: p.profession || "other",
+    preferredTone: p.preferredTone || "concise",
+  }));
+
+res.json({ success: true, profiles: cleanProfiles });
   } catch (err) {
     console.error("getProfiles error:", err);
     res.status(500).json({ success: false, message: "Failed to fetch profiles." });
@@ -49,7 +60,16 @@ export const createProfile = async (req, res) => {
       preferredTone: preferredTone || "concise",
     });
 
-    res.status(201).json({ success: true, profile });
+    res.status(201).json({
+  success: true,
+  profile: {
+    _id: profile._id,
+    name: profile.name,
+    avatar: profile.avatar,
+    profession: profile.profession,
+    preferredTone: profile.preferredTone,
+  },
+});
   } catch (err) {
     console.error("createProfile error:", err);
     res.status(500).json({ success: false, message: "Failed to create profile." });
@@ -74,7 +94,16 @@ export const updateProfile = async (req, res) => {
     if (preferredTone)   profile.preferredTone = preferredTone;
 
     await profile.save();
-    res.json({ success: true, profile });
+    res.json({
+  success: true,
+  profile: {
+    _id: profile._id,
+    name: profile.name,
+    avatar: profile.avatar,
+    profession: profile.profession,
+    preferredTone: profile.preferredTone,
+  },
+});
   } catch (err) {
     console.error("updateProfile error:", err);
     res.status(500).json({ success: false, message: "Failed to update profile." });
