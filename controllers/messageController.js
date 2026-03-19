@@ -27,74 +27,111 @@ export const getMessages = async (req, res) => {
 export const sendMessage = async (req, res) => {
   try {
     const { content, tone } = req.body;
-    if (!content?.trim())
-      return res.status(400).json({ success: false, message: "Content required." });
 
-    const chat = await Chat.findOne({ _id: req.params.chatId, profile: req.profile._id });
-    if (!chat) return res.status(404).json({ success: false, message: "Chat not found." });
+    // ✅ Validate input
+    if (!content?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Content required.",
+      });
+    }
 
-    const activeTone = tone || chat.tone || req.profile.preferredTone || "concise";
-
-    // Save user message
-    const userMessage = await Message.create({
-      chat:    chat._id,
-      role:    "user",
-      content: content.trim(),
-      tone:    activeTone,
+    // ✅ Find chat
+    const chat = await Chat.findOne({
+      _id: req.params.chatId,
+      profile: req.profile._id,
     });
 
-    // Fetch last 20 messages for context
+    if (!chat) {
+      return res.status(404).json({
+        success: false,
+        message: "Chat not found.",
+      });
+    }
+
+    // ✅ Determine tone
+    const activeTone =
+      tone || chat.tone || req.profile.preferredTone || "concise";
+
+    // ✅ Save user message
+    const userMessage = await Message.create({
+      chat: chat._id,
+      role: "user",
+      content: content.trim(),
+      tone: activeTone,
+    });
+
+    // ✅ Fetch last 20 messages for context
     const history = await Message.find({ chat: chat._id })
       .sort({ createdAt: -1 })
       .limit(20)
       .lean();
 
     const contextMessages = history.reverse().map((m) => ({
-      role:    m.role,
+      role: m.role,
       content: m.content,
     }));
 
-    // ── MEMORY: pass profileId as userId ─────────────────────
+    // ✅ Generate AI response
     const profileId = req.profile._id;
-    const aiResult  = await generateAIResponse(contextMessages, activeTone, profileId);
 
-    // Save assistant response
+    const aiResult = await generateAIResponse(
+      contextMessages,
+      activeTone,
+      profileId
+    );
+
+    // ❗ SAFETY CHECK
+    if (!aiResult || !aiResult.content) {
+      throw new Error("AI response failed");
+    }
+
+    // ✅ Save assistant message (FIXED — no tokens crash)
     const assistantMessage = await Message.create({
-      chat:    chat._id,
-      role:    "assistant",
+      chat: chat._id,
+      role: "assistant",
       content: aiResult.content,
-      tone:    activeTone,
-      tokens:  {
-        prompt:     aiResult.promptTokens,
-        completion: aiResult.completionTokens,
-      },
+      tone: activeTone,
     });
 
-    // Update chat
+    // ✅ Update chat
     const update = {
-      $push: { messages: { $each: [userMessage._id, assistantMessage._id] } },
+      $push: {
+        messages: {
+          $each: [userMessage._id, assistantMessage._id],
+        },
+      },
       tone: activeTone,
     };
+
+    // ✅ Auto-title for new chat
     if (chat.title === "New Chat" && chat.messages.length === 0) {
-      update.title = content.trim().slice(0, 40) + (content.length > 40 ? "…" : "");
+      update.title =
+        content.trim().slice(0, 40) +
+        (content.length > 40 ? "…" : "");
     }
+
     await Chat.findByIdAndUpdate(chat._id, update);
 
+    // ✅ Response
     res.json({
       success: true,
       userMessage,
       assistantMessage,
-      // Optional extras your frontend can use if needed
-      streak:      aiResult.memory ? getStreakDisplay(aiResult.memory) : null,
-      distressMode:aiResult.distressMode,
+      streak: aiResult.memory ? getStreakDisplay(aiResult.memory) : null,
+      distressMode: aiResult.distressMode,
     });
 
   } catch (err) {
-    console.error("sendMessage error:", err);
-    res.status(500).json({ success: false, message: "Failed to send message." });
+    // 🔥 IMPORTANT DEBUG LOG
+    console.error("🔥 SEND MESSAGE ERROR:", err);
+
+    res.status(500).json({
+      success: false,
+      message: err.message || "Failed to send message.",
+    });
   }
 };
-
 
 // ── NEW: getOpeningMessage ────────────────────────────────────
 // GET /chats/opening?tone=concise
