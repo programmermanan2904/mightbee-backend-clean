@@ -32,56 +32,47 @@ export const protectProfile = async (req, res, next) => {
   try {
     let token;
 
-    // ✅ Read profile token from header
-    if (req.headers["x-profile-token"]) {
-      token = req.headers["x-profile-token"];
-    } 
-    else if (req.headers.authorization?.startsWith("Profile ")) {
+    // ✅ Accept normal Bearer token
+    if (req.headers.authorization?.startsWith("Bearer ")) {
       token = req.headers.authorization.split(" ")[1];
+    }
+
+    // ✅ Fallback to custom profile token
+    else if (req.headers["x-profile-token"]) {
+      token = req.headers["x-profile-token"];
     }
 
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: "No profile token provided.",
+        message: "No token provided.",
       });
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    if (decoded.type !== "profile") {
+    // ✅ Normal account token support
+    const user = await User.findById(decoded.id);
+
+    if (!user) {
       return res.status(401).json({
         success: false,
-        message: "Invalid profile token.",
+        message: "User no longer exists.",
       });
     }
 
-    const profile = await Profile.findById(decoded.profileId);
-    if (!profile) {
-      return res.status(401).json({
-        success: false,
-        message: "Profile no longer exists.",
-      });
-    }
-
-    const account = await User.findById(profile.account);
-    if (!account) {
-      return res.status(401).json({
-        success: false,
-        message: "Account no longer exists.",
-      });
-    }
-
-    req.profile = profile;
-    req.user = account;
+    req.user = user;
 
     next();
   } catch (err) {
     const msg =
       err.name === "TokenExpiredError"
-        ? "Profile token expired."
-        : "Invalid profile token.";
+        ? "Token expired."
+        : "Invalid token.";
 
-    res.status(401).json({ success: false, message: msg });
+    res.status(401).json({
+      success: false,
+      message: msg,
+    });
   }
 };
